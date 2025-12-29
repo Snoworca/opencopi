@@ -51,6 +51,45 @@ const logger = winston.createLogger({
   ]
 });
 
+// Access 로거 (별도 파일)
+const accessLogger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.printf(({ timestamp, message }) => {
+      return `${timestamp} ${message}`;
+    })
+  ),
+  transports: [
+    new winston.transports.File({
+      filename: path.join(logDir, 'access.log'),
+      maxsize: 10485760, // 10MB
+      maxFiles: 10
+    })
+  ]
+});
+
+/**
+ * Access 로그 기록 (Apache Combined Log Format 스타일)
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ * @param {number} duration - 응답 시간 (ms)
+ */
+function logAccess(req, res, duration) {
+  const ip = req.ip || req.headers['x-forwarded-for'] || '-';
+  const method = req.method;
+  const url = req.originalUrl || req.url;
+  const status = res.statusCode;
+  const userAgent = req.headers['user-agent'] || '-';
+  const referer = req.headers['referer'] || '-';
+  const contentLength = res.get('content-length') || '-';
+
+  // Combined Log Format: IP - - [timestamp] "METHOD URL HTTP/1.1" STATUS SIZE "REFERER" "USER-AGENT" DURATION
+  const logLine = `${ip} - - "${method} ${url} HTTP/1.1" ${status} ${contentLength} "${referer}" "${userAgent}" ${duration}ms`;
+
+  accessLogger.info(logLine);
+}
+
 /**
  * 민감정보를 제거한 객체 반환
  */
@@ -95,4 +134,4 @@ async function saveRequestLog(requestLog) {
   }
 }
 
-module.exports = { logger, sanitizeForLogging, saveRequestLog, logDir, requestsLogDir };
+module.exports = { logger, accessLogger, logAccess, sanitizeForLogging, saveRequestLog, logDir, requestsLogDir };

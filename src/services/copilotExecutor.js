@@ -165,6 +165,79 @@ class CopilotExecutor {
   }
 
   /**
+   * 스트리밍 실행 (콜백 방식)
+   * @param {Array} messages - OpenAI 형식 메시지 배열
+   * @param {string} model - 모델 ID
+   * @param {Object} req - Express request 객체 (로깅용)
+   * @param {Function} onChunk - 청크 콜백 함수
+   */
+  async executeStreamCallback(messages, model, req, onChunk) {
+    const { systemPrompt, prompt } = messageTransformer.transform(messages);
+    const { dir } = await tempDirManager.create();
+    const streamId = responseFormatter.generateStreamId();
+
+    if (req) {
+      req.tempDir = dir;
+    }
+
+    try {
+      await tempDirManager.writeAgentsFile(dir, systemPrompt);
+
+      await new Promise((resolve, reject) => {
+        const args = [
+          '-p', prompt,
+          '--model', model,
+          '--silent',
+          '--allow-all-tools',
+          '--stream', 'on'
+        ];
+
+        const proc = spawn(this.cliPath, args, {
+          cwd: dir,
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        const timeoutId = setTimeout(() => {
+          proc.kill('SIGTERM');
+          reject(new Error('Request timeout'));
+        }, this.timeout);
+
+        proc.stdout.on('data', (data) => {
+          const content = data.toString();
+          if (content.length > 0) {
+            onChunk({
+              choices: [{
+                delta: { content },
+                index: 0
+              }]
+            });
+          }
+        });
+
+        proc.stderr.on('data', (data) => {
+          logger.warn(`Copilot stderr: ${data.toString()}`);
+        });
+
+        proc.on('close', (code) => {
+          clearTimeout(timeoutId);
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Copilot process exited with code ${code}`));
+          }
+        });
+
+        proc.on('error', (err) => {
+          clearTimeout(timeoutId);
+          reject(err);
+        });
+      });
+    } finally {
+      await tempDirManager.cleanup(dir);
+    }
+  }
+
+  /**
    * Copilot CLI 실행 (비스트리밍)
    * @param {string} prompt - 프롬프트
    * @param {string} model - 모델 ID

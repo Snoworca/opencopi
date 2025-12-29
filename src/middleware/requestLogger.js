@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { logger, saveRequestLog } = require('../utils/logger');
+const { logger, logAccess, saveRequestLog } = require('../utils/logger');
 const config = require('../config');
 
 /**
@@ -82,6 +82,9 @@ function requestLogger(req, res, next) {
 
     // 로그 저장
     saveRequestLog(req.requestLog);
+
+    // Access 로그 (별도 파일)
+    logAccess(req, res, duration);
 
     // 콘솔 로그
     logger.info(`${req.method} ${req.path} ${res.statusCode} ${duration}ms`, {
