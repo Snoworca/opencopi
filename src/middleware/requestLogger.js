@@ -13,6 +13,16 @@ function requestLogger(req, res, next) {
   // 요청 ID를 req에 저장 (다른 곳에서 사용)
   req.requestId = requestId;
 
+  // 상세 액세스 로그 (모든 요청)
+  logger.info(`[ACCESS] ${req.method} ${req.path} from ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`, {
+    requestId,
+    headers: {
+      'content-type': req.headers['content-type'],
+      'authorization': req.headers['authorization'] ? 'Bearer ***' : 'none',
+      'user-agent': req.headers['user-agent']
+    }
+  });
+
   // 요청 로그 객체 초기화
   req.requestLog = {
     requestId,

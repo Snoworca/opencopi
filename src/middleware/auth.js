@@ -1,6 +1,12 @@
 const crypto = require('crypto');
 const config = require('../config');
 
+// 인증 없이 접근 가능한 경로
+const PUBLIC_PATHS = [
+  '/v1/models',
+  '/health'
+];
+
 /**
  * API 키 인증 미들웨어
  */
@@ -9,6 +15,11 @@ function authMiddleware(req, res, next) {
 
   // API 키가 설정되지 않은 경우 인증 건너뛰기
   if (!apiKey) {
+    return next();
+  }
+
+  // 공개 경로는 인증 건너뛰기 (n8n 등 클라이언트 호환성)
+  if (PUBLIC_PATHS.some(path => req.path.startsWith(path))) {
     return next();
   }
 

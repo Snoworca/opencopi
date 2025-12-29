@@ -16,7 +16,11 @@ router.get('/v1/models', async (req, res, next) => {
       id: model.id,
       object: 'model',
       created: now,
-      owned_by: model.owned_by
+      owned_by: model.owned_by,
+      permission: [],
+      root: model.id,
+      parent: null,
+      max_model_len: 128000
     }));
 
     res.json({
@@ -51,7 +55,11 @@ router.get('/v1/models/:model', async (req, res, next) => {
       id: model.id,
       object: 'model',
       created: Math.floor(Date.now() / 1000),
-      owned_by: model.owned_by
+      owned_by: model.owned_by,
+      permission: [],
+      root: model.id,
+      parent: null,
+      max_model_len: 128000
     });
   } catch (error) {
     next(error);
