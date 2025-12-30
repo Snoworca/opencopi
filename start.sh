@@ -6,19 +6,38 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# GitHub Copilot CLI 설치 확인
+if ! copilot -v &> /dev/null; then
+    echo "=========================================="
+    echo "  GitHub Copilot CLI가 설치되어 있지 않습니다."
+    echo "=========================================="
+    echo ""
+    echo "설치 방법:"
+    echo "  npm install -g @github/copilot"
+    echo ""
+    echo "설치 후 다시 실행해 주세요."
+    exit 1
+fi
+
+echo "GitHub Copilot CLI 버전: $(copilot -v)"
+
 # PM2 설치 확인
 if ! command -v pm2 &> /dev/null; then
     echo "PM2가 설치되어 있지 않습니다. 설치 중..."
     npm install -g pm2
 fi
 
+# 의존성 설치/업데이트
+echo "의존성 확인 및 업데이트 중..."
+npm install
+
 # 이미 실행 중인지 확인
 if pm2 describe copilot-server &> /dev/null; then
     echo "copilot-server가 이미 실행 중입니다. 재시작합니다..."
-    pm2 restart copilot-server
+    pm2 restart copilot-server --update-env
 else
     echo "copilot-server를 시작합니다..."
-    pm2 start src/index.js --name copilot-server --time
+    pm2 start ecosystem.config.js
 fi
 
 # 상태 확인
