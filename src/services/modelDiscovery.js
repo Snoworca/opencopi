@@ -1,6 +1,7 @@
 /**
  * Model Discovery Service
  * Copilot CLI에서 사용 가능한 모델 목록을 동적으로 탐색
+ * Claude 모드에서는 단일 모델만 반환
  */
 
 const { spawn } = require('child_process');
@@ -9,6 +10,12 @@ const { logger } = require('../utils/logger');
 
 // 캐시된 모델 목록
 let cachedModels = null;
+
+// Claude 모드용 단일 모델
+const CLAUDE_MODEL = {
+  id: 'claude-haiku-4-5-20251001',
+  owned_by: 'anthropic'
+};
 
 // 폴백 모델 목록 (CLI 호출 실패 시)
 const FALLBACK_MODELS = [
@@ -91,8 +98,15 @@ function discoverModels() {
 
 /**
  * 모델 목록 조회 (캐싱)
+ * Claude 모드에서는 단일 모델만 반환
  */
 async function getModels() {
+  // Claude 모드: 단일 모델만 반환
+  if (config.service === 'claude') {
+    return [CLAUDE_MODEL];
+  }
+
+  // Copilot 모드: 동적 탐색
   if (cachedModels) {
     return cachedModels;
   }

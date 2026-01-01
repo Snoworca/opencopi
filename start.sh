@@ -1,25 +1,51 @@
 #!/bin/bash
 
-# Copilot Server 시작 스크립트
+# Copilot/Claude Server 시작 스크립트
 # PM2를 사용하여 데몬으로 실행
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# GitHub Copilot CLI 설치 확인
-if ! copilot -v &> /dev/null; then
-    echo "=========================================="
-    echo "  GitHub Copilot CLI가 설치되어 있지 않습니다."
-    echo "=========================================="
-    echo ""
-    echo "설치 방법:"
-    echo "  npm install -g @github/copilot"
-    echo ""
-    echo "설치 후 다시 실행해 주세요."
-    exit 1
+# .env 파일 로드 (SERVICE 변수 확인용)
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs)
 fi
 
-echo "GitHub Copilot CLI 버전: $(copilot -v)"
+# SERVICE 기본값: copilot
+SERVICE="${SERVICE:-copilot}"
+
+echo "서비스 모드: $SERVICE"
+
+# CLI 설치 확인 (서비스에 따라)
+if [ "$SERVICE" = "claude" ]; then
+    # Claude CLI 확인
+    if ! claude --version &> /dev/null; then
+        echo "=========================================="
+        echo "  Claude CLI가 설치되어 있지 않습니다."
+        echo "=========================================="
+        echo ""
+        echo "설치 방법:"
+        echo "  npm install -g @anthropic-ai/claude-code"
+        echo ""
+        echo "설치 후 다시 실행해 주세요."
+        exit 1
+    fi
+    echo "Claude CLI 버전: $(claude --version)"
+else
+    # GitHub Copilot CLI 확인
+    if ! copilot -v &> /dev/null; then
+        echo "=========================================="
+        echo "  GitHub Copilot CLI가 설치되어 있지 않습니다."
+        echo "=========================================="
+        echo ""
+        echo "설치 방법:"
+        echo "  npm install -g @github/copilot"
+        echo ""
+        echo "설치 후 다시 실행해 주세요."
+        exit 1
+    fi
+    echo "GitHub Copilot CLI 버전: $(copilot -v)"
+fi
 
 # PM2 설치 확인
 if ! command -v pm2 &> /dev/null; then

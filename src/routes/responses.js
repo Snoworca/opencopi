@@ -1,10 +1,18 @@
 const express = require('express');
 const copilotExecutor = require('../services/copilotExecutor');
+const claudeExecutor = require('../services/claudeExecutor');
 const { logger } = require('../utils/logger');
 const config = require('../config');
 const { getModels } = require('../services/modelDiscovery');
 
 const router = express.Router();
+
+/**
+ * 서비스에 따른 executor 선택
+ */
+function getExecutor() {
+  return config.service === 'claude' ? claudeExecutor : copilotExecutor;
+}
 
 /**
  * content를 문자열로 변환
@@ -198,14 +206,17 @@ router.post('/v1/responses', async (req, res, next) => {
       logger.warn(`Responses API: Ignored parameters (not supported by Copilot CLI): ${ignoredParams.join(', ')}`);
     }
 
-    logger.info(`Responses API request: model=${model}, stream=${stream || false}, messages=${messages.length}`);
+    logger.info(`Responses API request: service=${config.service}, model=${model}, stream=${stream || false}, messages=${messages.length}`);
 
     if (req.requestLog) {
       req.requestLog.request.model = model;
       req.requestLog.request.messageCount = messages.length;
       req.requestLog.request.stream = stream || false;
       req.requestLog.request.endpoint = 'responses';
+      req.requestLog.request.service = config.service;
     }
+
+    const executor = getExecutor();
 
     if (stream) {
       // 스트리밍 모드 - SSE 형식으로 Responses API 스트림
@@ -230,7 +241,7 @@ router.post('/v1/responses', async (req, res, next) => {
       let fullContent = '';
 
       // Chat Completion 스트림을 Responses 스트림으로 변환
-      await copilotExecutor.executeStreamCallback(messages, model, req, (chunk) => {
+      await executor.executeStreamCallback(messages, model, req, (chunk) => {
         if (chunk.choices?.[0]?.delta?.content) {
           const text = chunk.choices[0].delta.content;
           fullContent += text;
@@ -264,7 +275,7 @@ router.post('/v1/responses', async (req, res, next) => {
       res.end();
     } else {
       // 비스트리밍 모드
-      const chatResponse = await copilotExecutor.execute(messages, model, req);
+      const chatResponse = await executor.execute(messages, model, req);
       const responsesFormat = convertToResponsesFormat(chatResponse, model);
       res.json(responsesFormat);
     }

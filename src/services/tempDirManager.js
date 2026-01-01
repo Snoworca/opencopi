@@ -27,7 +27,7 @@ class TempDirManager {
   }
 
   /**
-   * AGENTS.md 파일 작성 (시스템 프롬프트)
+   * AGENTS.md 파일 작성 (시스템 프롬프트 - Copilot용)
    * @param {string} dir - 디렉토리 경로
    * @param {string} systemPrompt - 시스템 프롬프트 내용
    */
@@ -39,6 +39,23 @@ class TempDirManager {
     const filePath = path.join(dir, 'AGENTS.md');
     await fs.writeFile(filePath, systemPrompt, 'utf-8');
     logger.debug(`Written AGENTS.md to: ${filePath}`);
+  }
+
+  /**
+   * 시스템 프롬프트 파일 작성 (Claude용)
+   * @param {string} dir - 디렉토리 경로
+   * @param {string} systemPrompt - 시스템 프롬프트 내용
+   * @returns {Promise<string|null>} 파일 경로 또는 null
+   */
+  async writeSystemPromptFile(dir, systemPrompt) {
+    if (!systemPrompt || systemPrompt.trim() === '') {
+      return null;
+    }
+
+    const filePath = path.join(dir, 'system-prompt.txt');
+    await fs.writeFile(filePath, systemPrompt, 'utf-8');
+    logger.debug(`Written system-prompt.txt to: ${filePath}`);
+    return filePath;
   }
 
   /**

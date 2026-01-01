@@ -1,9 +1,18 @@
 const express = require('express');
 const { validateChatCompletion } = require('../middleware/validateRequest');
 const copilotExecutor = require('../services/copilotExecutor');
+const claudeExecutor = require('../services/claudeExecutor');
+const config = require('../config');
 const { logger } = require('../utils/logger');
 
 const router = express.Router();
+
+/**
+ * 서비스에 따른 executor 선택
+ */
+function getExecutor() {
+  return config.service === 'claude' ? claudeExecutor : copilotExecutor;
+}
 
 /**
  * POST /v1/chat/completions
@@ -21,25 +30,28 @@ router.post('/v1/chat/completions', validateChatCompletion, async (req, res, nex
   if (frequency_penalty !== undefined) ignoredParams.push(`frequency_penalty=${frequency_penalty}`);
 
   if (ignoredParams.length > 0) {
-    logger.warn(`Chat Completions: Ignored parameters (not supported by Copilot CLI): ${ignoredParams.join(', ')}`);
+    logger.warn(`Chat Completions: Ignored parameters (not supported by CLI): ${ignoredParams.join(', ')}`);
   }
 
-  logger.info(`Chat completion request: model=${model}, stream=${stream}, messages=${messages.length}`);
+  logger.info(`Chat completion request: service=${config.service}, model=${model}, stream=${stream}, messages=${messages.length}`);
 
   // 요청 로그에 모델과 메시지 수 추가
   if (req.requestLog) {
     req.requestLog.request.model = model;
     req.requestLog.request.messageCount = messages.length;
     req.requestLog.request.stream = stream;
+    req.requestLog.request.service = config.service;
   }
 
   try {
+    const executor = getExecutor();
+
     if (stream) {
       // 스트리밍 모드
-      await copilotExecutor.executeStream(messages, model, res, req);
+      await executor.executeStream(messages, model, res, req);
     } else {
       // 비스트리밍 모드
-      const response = await copilotExecutor.execute(messages, model, req);
+      const response = await executor.execute(messages, model, req);
       res.json(response);
     }
   } catch (err) {

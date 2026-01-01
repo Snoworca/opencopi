@@ -6,9 +6,20 @@ const config = {
     host: process.env.HOST || '0.0.0.0'
   },
 
+  // 백엔드 서비스 선택: 'copilot' 또는 'claude'
+  service: (process.env.SERVICE || 'copilot').toLowerCase(),
+
   copilot: {
     defaultModel: process.env.DEFAULT_MODEL || 'gpt-4.1',
     cliPath: process.env.COPILOT_CLI_PATH || 'copilot',
+    timeout: parseInt(process.env.REQUEST_TIMEOUT, 10) || 300000,
+    tempDirBase: process.env.TEMP_DIR_BASE || '/tmp'
+  },
+
+  claude: {
+    // Claude는 단일 모델만 지원
+    defaultModel: 'claude-haiku-4-5-20251001',
+    cliPath: process.env.CLAUDE_CLI_PATH || 'claude',
     timeout: parseInt(process.env.REQUEST_TIMEOUT, 10) || 300000,
     tempDirBase: process.env.TEMP_DIR_BASE || '/tmp'
   },
@@ -32,6 +43,7 @@ const config = {
   }
 
   // 모델 목록은 modelDiscovery 서비스에서 동적으로 탐색됨
+  // Claude 모드에서는 단일 모델(claude-haiku-4-5-20251001)만 반환
   // src/services/modelDiscovery.js 참조
 };
 

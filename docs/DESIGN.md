@@ -1,7 +1,7 @@
 # Copilot Server - OpenAI API 호환 서버 설계 문서
 
-> **버전**: 2.1
-> **최종 수정**: 2024-12-29
+> **버전**: 3.0
+> **최종 수정**: 2025-01-01
 > **상태**: 승인됨
 
 ---
@@ -9,12 +9,14 @@
 ## 1. 개요
 
 ### 1.1 프로젝트 목표
-GitHub Copilot CLI를 래핑하여 OpenAI API와 완전히 호환되는 REST API 서버를 구현한다.
+GitHub Copilot CLI 또는 Claude CLI를 래핑하여 OpenAI API와 완전히 호환되는 REST API 서버를 구현한다. 환경 변수 설정으로 백엔드 서비스(Copilot/Claude)를 전환할 수 있다.
 
 ### 1.2 핵심 요구사항
 | 요구사항 | 우선순위 | 상태 |
 |----------|----------|------|
 | OpenAI Chat Completions API 형식 완전 호환 | 필수 | 설계 완료 |
+| OpenAI Responses API 형식 지원 | 필수 | 설계 완료 |
+| 다중 백엔드 서비스 지원 (Copilot/Claude) | 필수 | 설계 완료 |
 | 다중 모델 지원 (Claude, GPT, Gemini) | 필수 | 설계 완료 |
 | 스트리밍 모드 지원 | 필수 | 설계 완료 |
 | 비스트리밍 모드 지원 | 필수 | 설계 완료 |
@@ -23,9 +25,29 @@ GitHub Copilot CLI를 래핑하여 OpenAI API와 완전히 호환되는 REST API
 | API 인증 | 선택 | 설계 완료 |
 | Rate Limiting | 선택 | 설계 완료 |
 
-### 1.3 지원 모델 (동적 탐색)
+### 1.3 백엔드 서비스 지원
 
-모델 목록은 Copilot CLI에서 **동적으로 탐색**됩니다:
+본 서버는 두 가지 백엔드 서비스를 지원합니다:
+
+| 서비스 | 환경변수 | 설명 |
+|--------|----------|------|
+| GitHub Copilot CLI | `SERVICE=copilot` (기본값) | 다중 모델 지원 (Claude, GPT, Gemini) |
+| Claude CLI | `SERVICE=claude` | 단일 모델 (claude-haiku-4-5-20251001) |
+
+#### GitHub Copilot CLI 모드
+- 다양한 모델 선택 가능 (동적 탐색)
+- AGENTS.md 파일을 통한 시스템 프롬프트 주입
+- `--silent --allow-all-tools` 옵션 사용
+
+#### Claude CLI 모드
+- 단일 모델만 지원: `claude-haiku-4-5-20251001`
+- `--system-prompt-file` 옵션을 통한 시스템 프롬프트 주입
+- `--dangerously-skip-permissions` 옵션 사용 (자동 실행용)
+- 임시 파일 생성 후 실행, 완료 후 자동 삭제
+
+### 1.4 지원 모델 (동적 탐색)
+
+모델 목록은 Copilot CLI에서 **동적으로 탐색**됩니다 (Claude 모드에서는 단일 모델만 지원):
 
 ```bash
 # 잘못된 모델 입력 시 허용된 모델 목록 반환
@@ -58,9 +80,9 @@ copilot --model invalid 2>&1
 | gpt-4.1 | OpenAI |
 | gemini-3-pro-preview | Google |
 
-### 1.4 핵심 발견사항 (연구 결과)
+### 1.5 핵심 발견사항 (연구 결과)
 
-연구를 통해 확인된 Copilot CLI 동작:
+#### GitHub Copilot CLI 동작
 
 ```bash
 # 시스템 프롬프트: AGENTS.md 파일을 통해 주입
@@ -77,6 +99,23 @@ copilot -p "Say hello" --silent --allow-all-tools
 copilot -p "..." --stream off --silent --allow-all-tools
 ```
 
+#### Claude CLI 동작
+
+```bash
+# 기본 실행 형식
+claude -p "프롬프트 내용" --dangerously-skip-permissions --model claude-haiku-4-5-20251001
+
+# 시스템 프롬프트: 임시 파일을 통해 주입
+echo "You are a helpful assistant." > /tmp/system-prompt.txt
+claude -p "Say hello" --dangerously-skip-permissions --model claude-haiku-4-5-20251001 \
+  --system-prompt-file /tmp/system-prompt.txt
+# 실행 후 임시 파일 삭제
+
+# --system-prompt-file: 파일에서 시스템 프롬프트 로드 (print 모드에서만 작동)
+# --dangerously-skip-permissions: 사용자 확인 없이 자동 실행
+# 단일 모델만 지원: claude-haiku-4-5-20251001
+```
+
 ---
 
 ## 2. 아키텍처
@@ -86,12 +125,12 @@ copilot -p "..." --stream off --silent --allow-all-tools
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Client (OpenAI SDK Compatible)               │
-│         Python openai / Node.js openai / curl / etc.            │
+│         Python openai / Node.js openai / curl / n8n             │
 └─────────────────────────────┬───────────────────────────────────┘
                               │ HTTP/HTTPS
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Copilot Proxy Server                        │
+│                      Proxy Server                                │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │                    Middleware Stack                       │   │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐ │   │
@@ -102,29 +141,29 @@ copilot -p "..." --stream off --silent --allow-all-tools
 │                             │                                    │
 │  ┌──────────────────────────▼───────────────────────────────┐   │
 │  │                      Router                               │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐   │   │
-│  │  │ GET         │  │ POST        │  │ GET             │   │   │
-│  │  │ /v1/models  │  │ /v1/chat/   │  │ /health         │   │   │
-│  │  │             │  │ completions │  │                 │   │   │
-│  │  └─────────────┘  └──────┬──────┘  └─────────────────┘   │   │
-│  └──────────────────────────┼───────────────────────────────┘   │
-│                             │                                    │
-│  ┌──────────────────────────▼───────────────────────────────┐   │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌───────────┐ ┌───────┐│   │
+│  │  │ GET         │ │ POST        │ │ POST      │ │ GET   ││   │
+│  │  │ /v1/models  │ │ /v1/chat/   │ │ /v1/      │ │/health││   │
+│  │  │             │ │ completions │ │ responses │ │       ││   │
+│  │  └─────────────┘ └──────┬──────┘ └─────┬─────┘ └───────┘│   │
+│  └─────────────────────────┼──────────────┼─────────────────┘   │
+│                            └──────┬───────┘                      │
+│  ┌────────────────────────────────▼─────────────────────────┐   │
 │  │                  Request Handler                          │   │
 │  │  ┌─────────────────┐  ┌─────────────────────────────┐    │   │
 │  │  │ RequestValidator│  │ MessageTransformer          │    │   │
-│  │  │ - model check   │  │ - system → AGENTS.md        │    │   │
+│  │  │ - model check   │  │ - system → temp file        │    │   │
 │  │  │ - schema valid  │  │ - messages → prompt text    │    │   │
 │  │  └─────────────────┘  └─────────────────────────────┘    │   │
 │  └──────────────────────────┬───────────────────────────────┘   │
 │                             │                                    │
 │  ┌──────────────────────────▼───────────────────────────────┐   │
-│  │                  Copilot Executor                         │   │
+│  │              Service Executor (SERVICE 환경변수)           │   │
 │  │  ┌─────────────────┐  ┌─────────────────────────────┐    │   │
 │  │  │ TempDirManager  │  │ ProcessManager              │    │   │
-│  │  │ - create        │  │ - spawn copilot             │    │   │
-│  │  │ - cleanup       │  │ - stream stdout             │    │   │
-│  │  │ - write AGENTS  │  │ - handle timeout            │    │   │
+│  │  │ - create dir    │  │ - spawn CLI                 │    │   │
+│  │  │ - write prompts │  │ - stream stdout             │    │   │
+│  │  │ - cleanup       │  │ - handle timeout            │    │   │
 │  │  └─────────────────┘  └─────────────────────────────┘    │   │
 │  └──────────────────────────┬───────────────────────────────┘   │
 │                             │                                    │
@@ -138,11 +177,18 @@ copilot -p "..." --stream off --silent --allow-all-tools
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     GitHub Copilot CLI                          │
-│   copilot -p "..." --model X --silent --allow-all-tools         │
-└─────────────────────────────────────────────────────────────────┘
+                 ┌────────────┴────────────┐
+                 │                         │
+                 ▼                         ▼
+┌────────────────────────────┐ ┌────────────────────────────────┐
+│   GitHub Copilot CLI       │ │        Claude CLI              │
+│   (SERVICE=copilot)        │ │        (SERVICE=claude)        │
+│                            │ │                                │
+│   copilot -p "..."         │ │   claude -p "..."              │
+│   --model X                │ │   --dangerously-skip-perms     │
+│   --silent                 │ │   --model claude-haiku-4-5-... │
+│   --allow-all-tools        │ │   --system-prompt-file         │
+└────────────────────────────┘ └────────────────────────────────┘
 ```
 
 ### 2.2 컴포넌트 상세
@@ -259,7 +305,7 @@ class ModelDiscovery {
 }
 ```
 
-#### 2.2.4 ProcessManager
+#### 2.2.4 ProcessManager (Copilot)
 
 ```javascript
 class ProcessManager {
@@ -283,6 +329,99 @@ class ProcessManager {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: this.timeout
+    });
+  }
+}
+```
+
+#### 2.2.5 ClaudeExecutor
+
+Claude CLI를 래핑하는 실행 관리자입니다. Copilot과 다른 점:
+- 단일 모델만 지원 (`claude-haiku-4-5-20251001`)
+- 시스템 프롬프트를 `--system-prompt-file` 옵션으로 전달
+- `--dangerously-skip-permissions` 옵션으로 자동 실행
+
+```javascript
+class ClaudeExecutor {
+  constructor() {
+    this.cliPath = config.claude.cliPath;
+    this.timeout = config.claude.timeout;
+    this.model = 'claude-haiku-4-5-20251001';  // 고정
+  }
+
+  /**
+   * 비스트리밍 실행
+   */
+  async execute(messages, model, req = null) {
+    const { systemPrompt, prompt } = messageTransformer.transform(messages);
+    const { dir } = await tempDirManager.create();
+
+    if (req) req.tempDir = dir;
+
+    try {
+      // 시스템 프롬프트가 있으면 임시 파일로 작성
+      let systemPromptFile = null;
+      if (systemPrompt) {
+        systemPromptFile = await tempDirManager.writeSystemPromptFile(dir, systemPrompt);
+      }
+
+      // Claude CLI 실행
+      const output = await this.runClaude(prompt, dir, systemPromptFile);
+      return responseFormatter.formatCompletion(output, this.model);
+    } finally {
+      // 임시 디렉토리 정리 (시스템 프롬프트 파일 포함)
+      await tempDirManager.cleanup(dir);
+    }
+  }
+
+  /**
+   * Claude CLI 명령 생성
+   */
+  buildArgs(prompt, systemPromptFile) {
+    const args = [
+      '-p', prompt,
+      '--dangerously-skip-permissions',
+      '--model', this.model
+    ];
+
+    if (systemPromptFile) {
+      args.push('--system-prompt-file', systemPromptFile);
+    }
+
+    return args;
+  }
+
+  /**
+   * Claude CLI 실행
+   */
+  runClaude(prompt, cwd, systemPromptFile) {
+    return new Promise((resolve, reject) => {
+      const args = this.buildArgs(prompt, systemPromptFile);
+
+      const proc = spawn(this.cliPath, args, {
+        cwd,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      const timeoutId = setTimeout(() => {
+        proc.kill('SIGTERM');
+        reject(new Error('Request timeout'));
+      }, this.timeout);
+
+      proc.stdout.on('data', (data) => stdout += data.toString());
+      proc.stderr.on('data', (data) => stderr += data.toString());
+
+      proc.on('close', (code) => {
+        clearTimeout(timeoutId);
+        if (code === 0) {
+          resolve(stdout.trim());
+        } else {
+          reject(new Error(`Claude CLI failed: ${stderr}`));
+        }
+      });
     });
   }
 }
@@ -380,7 +519,7 @@ data: [DONE]
 
 ### 3.2 GET /v1/models
 
-#### 응답
+#### 응답 (Copilot 모드)
 
 ```json
 {
@@ -402,7 +541,123 @@ data: [DONE]
 }
 ```
 
-### 3.3 GET /health
+#### 응답 (Claude 모드)
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "object": "model",
+      "created": 1703980800,
+      "owned_by": "anthropic"
+    }
+  ]
+}
+```
+
+### 3.3 POST /v1/responses
+
+OpenAI Responses API 형식을 지원합니다. n8n 등 OpenAI API 호환 도구에서 사용됩니다.
+
+#### 요청 스키마
+
+```typescript
+interface ResponsesRequest {
+  model: string;                    // 필수: 모델 ID
+  input: string | InputItem[];      // 필수: 프롬프트 또는 메시지 배열
+  instructions?: string;            // 선택: 시스템 프롬프트
+  stream?: boolean;                 // 선택: 스트리밍 모드 (기본: false)
+  temperature?: number;             // 무시됨 (CLI 미지원)
+  max_output_tokens?: number;       // 무시됨
+  top_p?: number;                   // 무시됨
+}
+
+interface InputItem {
+  role?: 'user' | 'assistant' | 'system';
+  content: string | ContentPart[];
+}
+
+interface ContentPart {
+  type: 'input_text' | 'text';
+  text: string;
+}
+```
+
+#### 요청 예시
+
+```json
+{
+  "model": "claude-opus-4.5",
+  "input": "Hello, how are you?",
+  "instructions": "You are a helpful assistant.",
+  "stream": false
+}
+```
+
+#### 배열 형식 요청 예시
+
+```json
+{
+  "model": "gpt-4.1",
+  "input": [
+    {"role": "user", "content": [{"type": "input_text", "text": "Hello!"}]},
+    {"role": "assistant", "content": "Hi there!"},
+    {"role": "user", "content": "How are you?"}
+  ]
+}
+```
+
+#### 응답 (비스트리밍)
+
+```json
+{
+  "id": "resp_abc123xyz",
+  "object": "response",
+  "created_at": 1703980800,
+  "status": "completed",
+  "model": "claude-opus-4.5",
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_xyz789",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Hello! I'm doing well, thank you for asking."
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": -1,
+    "output_tokens": -1,
+    "total_tokens": -1
+  }
+}
+```
+
+#### 응답 (스트리밍)
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+
+data: {"type":"response.created","response":{"id":"resp_abc123","object":"response","status":"in_progress","model":"claude-opus-4.5"}}
+
+data: {"type":"response.output_text.delta","delta":"Hello","output_index":0,"content_index":0}
+
+data: {"type":"response.output_text.delta","delta":"!","output_index":0,"content_index":0}
+
+data: {"type":"response.completed","response":{"id":"resp_abc123","object":"response","status":"completed","model":"claude-opus-4.5","output":[{"type":"message","id":"msg_xyz","role":"assistant","content":[{"type":"output_text","text":"Hello!"}]}]}}
+
+data: [DONE]
+```
+
+### 3.4 GET /health
 
 #### 응답
 
@@ -562,11 +817,18 @@ PORT=3456
 HOST=0.0.0.0
 
 #============================================
-# Copilot CLI Configuration
+# Service Configuration
+#============================================
+
+# 백엔드 서비스 선택 (copilot 또는 claude, 기본: copilot)
+SERVICE=copilot
+
+#============================================
+# Copilot CLI Configuration (SERVICE=copilot)
 #============================================
 
 # 기본 모델 (요청에 model이 없을 때 사용)
-DEFAULT_MODEL=gpt-5-mini
+DEFAULT_MODEL=gpt-4.1
 
 # Copilot CLI 실행 경로 (기본: copilot)
 COPILOT_CLI_PATH=copilot
@@ -576,6 +838,16 @@ REQUEST_TIMEOUT=300000
 
 # 임시 디렉토리 기본 경로 (기본: /tmp)
 TEMP_DIR_BASE=/tmp
+
+#============================================
+# Claude CLI Configuration (SERVICE=claude)
+#============================================
+
+# Claude CLI 실행 경로 (기본: claude)
+CLAUDE_CLI_PATH=claude
+
+# Claude 고정 모델 (변경 불가)
+# claude-haiku-4-5-20251001
 
 #============================================
 # Security
@@ -621,9 +893,20 @@ const config = {
     host: process.env.HOST || '0.0.0.0'
   },
 
+  // 백엔드 서비스 선택: 'copilot' 또는 'claude'
+  service: process.env.SERVICE || 'copilot',
+
   copilot: {
-    defaultModel: process.env.DEFAULT_MODEL || 'gpt-5-mini',
+    defaultModel: process.env.DEFAULT_MODEL || 'gpt-4.1',
     cliPath: process.env.COPILOT_CLI_PATH || 'copilot',
+    timeout: parseInt(process.env.REQUEST_TIMEOUT, 10) || 300000,
+    tempDirBase: process.env.TEMP_DIR_BASE || '/tmp'
+  },
+
+  claude: {
+    // Claude는 단일 모델만 지원
+    defaultModel: 'claude-haiku-4-5-20251001',
+    cliPath: process.env.CLAUDE_CLI_PATH || 'claude',
     timeout: parseInt(process.env.REQUEST_TIMEOUT, 10) || 300000,
     tempDirBase: process.env.TEMP_DIR_BASE || '/tmp'
   },
@@ -640,24 +923,14 @@ const config = {
 
   logging: {
     level: process.env.LOG_LEVEL || 'info',
-    logRequestBody: process.env.LOG_REQUEST_BODY === 'true'
-  },
+    dir: process.env.LOG_DIR || './logs',
+    logRequests: process.env.LOG_REQUESTS !== 'false',
+    logRequestBody: process.env.LOG_REQUEST_BODY === 'true',
+    logResponseBody: process.env.LOG_RESPONSE_BODY === 'true'
+  }
 
-  models: [
-    { id: 'claude-sonnet-4.5', owned_by: 'anthropic' },
-    { id: 'claude-haiku-4.5', owned_by: 'anthropic' },
-    { id: 'claude-opus-4.5', owned_by: 'anthropic' },
-    { id: 'claude-sonnet-4', owned_by: 'anthropic' },
-    { id: 'gpt-5.1-codex-max', owned_by: 'openai' },
-    { id: 'gpt-5.1-codex', owned_by: 'openai' },
-    { id: 'gpt-5.2', owned_by: 'openai' },
-    { id: 'gpt-5.1', owned_by: 'openai' },
-    { id: 'gpt-5', owned_by: 'openai' },
-    { id: 'gpt-5.1-codex-mini', owned_by: 'openai' },
-    { id: 'gpt-5-mini', owned_by: 'openai' },
-    { id: 'gpt-4.1', owned_by: 'openai' },
-    { id: 'gemini-3-pro-preview', owned_by: 'google' }
-  ]
+  // 모델 목록은 modelDiscovery 서비스에서 동적으로 탐색됨
+  // Claude 모드에서는 단일 모델(claude-haiku-4-5-20251001)만 반환
 };
 
 module.exports = config;
@@ -1142,7 +1415,8 @@ describe('E2E: Real Copilot CLI', () => {
 copilot-server/
 ├── docs/
 │   ├── DESIGN.md              # 본 문서
-│   └── EVALUATION.md          # 평가 문서
+│   ├── EVALUATION.md          # 평가 문서
+│   └── CODE_EVALUATION.md     # 코드 평가 문서
 ├── src/
 │   ├── index.js               # 엔트리포인트
 │   ├── server.js              # Express 앱 설정
@@ -1151,31 +1425,40 @@ copilot-server/
 │   │   ├── index.js           # 라우터 통합
 │   │   ├── chat.js            # POST /v1/chat/completions
 │   │   ├── models.js          # GET /v1/models
+│   │   ├── responses.js       # POST /v1/responses (OpenAI Responses API)
 │   │   └── health.js          # GET /health
 │   ├── services/
-│   │   ├── copilotExecutor.js # CLI 실행 관리
+│   │   ├── copilotExecutor.js # Copilot CLI 실행 관리
+│   │   ├── claudeExecutor.js  # Claude CLI 실행 관리 (SERVICE=claude)
 │   │   ├── messageTransformer.js  # 메시지 변환
+│   │   ├── modelDiscovery.js  # 동적 모델 탐색
 │   │   ├── tempDirManager.js  # 임시 디렉토리 관리
 │   │   └── responseFormatter.js   # 응답 포맷팅
 │   ├── middleware/
 │   │   ├── auth.js            # 인증
 │   │   ├── rateLimit.js       # 속도 제한
-│   │   ├── validateRequest.js # 요청 검증
+│   │   ├── requestLogger.js   # 요청 로깅
 │   │   └── errorHandler.js    # 에러 처리
 │   └── utils/
-│       └── logger.js          # 로깅 유틸리티
+│       └── logger.js          # 로깅 유틸리티 (access/error/combined)
+├── logs/                      # 로그 디렉토리
+│   ├── combined.log           # 전체 로그
+│   ├── error.log              # 에러 로그
+│   ├── access.log             # 액세스 로그 (Apache 형식)
+│   └── requests/              # 요청별 상세 로그
+│       └── YYYY-MM-DD/
+│           └── {request-id}.json
+├── chat-client/               # 대화형 테스트 클라이언트
+│   └── chat.sh
 ├── tests/
 │   ├── unit/
-│   │   ├── messageTransformer.test.js
-│   │   ├── tempDirManager.test.js
-│   │   └── responseFormatter.test.js
 │   ├── integration/
-│   │   ├── chatCompletions.test.js
-│   │   └── models.test.js
 │   └── e2e/
-│       └── realCopilot.test.js
 ├── .env.example               # 환경 변수 템플릿
 ├── .gitignore
+├── ecosystem.config.js        # PM2 설정 (dotenv 지원)
+├── start.sh                   # 서버 시작 스크립트
+├── stop.sh                    # 서버 종료 스크립트
 ├── package.json
 └── README.md                  # 사용 가이드
 ```

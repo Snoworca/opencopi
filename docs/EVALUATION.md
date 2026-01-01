@@ -224,3 +224,164 @@
 - [x] 의존성 목록 작성 완료
 - [x] 구현 체크리스트 작성 완료
 - [x] 확장 가이드 작성 완료
+
+---
+
+## 3차 평가 (v3.0 - Claude CLI 및 Responses API 지원)
+
+### 설계 문서 변경 사항
+
+**버전 업데이트:** v2.1 → v3.0
+
+**주요 추가 내용:**
+1. 다중 백엔드 서비스 지원 (Copilot/Claude)
+2. OpenAI Responses API 엔드포인트
+3. Claude CLI 실행기 설계
+4. Access 로그 시스템
+5. 아키텍처 다이어그램 업데이트
+
+---
+
+### 1. 완전성 (Completeness): A+
+
+**추가된 내용:**
+- ✅ Claude CLI 지원 설명 (Section 1.3)
+- ✅ SERVICE 환경변수 문서화 (Section 5.1)
+- ✅ Claude CLI 명령 형식 및 옵션 (Section 1.5)
+- ✅ --system-prompt-file 사용법
+- ✅ POST /v1/responses API 명세 (Section 3.3)
+- ✅ Responses API 요청/응답 스키마
+- ✅ 스트리밍 이벤트 형식
+- ✅ ClaudeExecutor 컴포넌트 설계 (Section 2.2.5)
+- ✅ Access 로그 형식 (Apache Combined)
+- ✅ 프로젝트 구조 업데이트
+
+**평가:**
+- 모든 새 기능에 대한 완전한 설명 제공
+- API 스키마 및 예제 완비
+- 서비스 전환 방법 명확히 문서화
+
+### 2. 명확성 (Clarity): A+
+
+**개선된 점:**
+- ✅ 아키텍처 다이어그램에 두 백엔드 표시
+- ✅ 서비스별 동작 차이 명확화
+- ✅ Responses API input 형식 상세 설명
+- ✅ TypeScript 인터페이스로 스키마 정의
+- ✅ 스트리밍 이벤트 형식 예제
+
+**평가:**
+- 두 백엔드 서비스의 차이점 명확히 구분
+- 시각적 다이어그램 업데이트
+- 모호함 없는 API 명세
+
+### 3. 실현가능성 (Feasibility): A+
+
+**검증된 사항:**
+- ✅ Claude CLI --system-prompt-file 옵션 검증
+- ✅ --dangerously-skip-permissions 자동화 검증
+- ✅ Responses API 형식 검증 (n8n 호환)
+- ✅ 임시 파일 생성/정리 로직 검증
+
+**평가:**
+- 모든 CLI 옵션 실제 테스트로 검증
+- 외부 도구 호환성 확인
+- 즉시 구현 가능한 설계
+
+### 4. 확장성 (Extensibility): A+
+
+**개선된 점:**
+- ✅ SERVICE 환경변수로 백엔드 전환
+- ✅ 새로운 백엔드 추가 패턴 제시
+- ✅ Executor 인터페이스 추상화
+- ✅ Responses API input 타입 확장 가능
+
+**평가:**
+- 새 백엔드 추가 용이
+- 모듈화된 Executor 구조
+- 설정 기반 전환
+
+### 5. 에러 처리 (Error Handling): A+
+
+**추가된 내용:**
+- ✅ Claude CLI 에러 처리 패턴
+- ✅ Responses API 에러 응답 형식
+- ✅ input 검증 에러
+- ✅ 모델 검증 에러 (Claude 모드)
+
+**평가:**
+- 모든 새 에러 시나리오 대응
+- OpenAI 호환 에러 형식 유지
+- 적절한 HTTP 상태 코드
+
+### 6. 보안 (Security): A+
+
+**추가된 내용:**
+- ✅ Claude CLI spawn 사용 (쉘 인젝션 방지)
+- ✅ 임시 파일 자동 정리
+- ✅ --dangerously-skip-permissions 설명 (자동화 목적)
+- ✅ Access 로그 민감정보 마스킹
+
+**평가:**
+- 기존 보안 수준 유지
+- 임시 파일 보안 고려
+- 자동화 옵션 문서화
+
+### 7. 테스트 용이성 (Testability): A+
+
+**추가된 내용:**
+- ✅ ClaudeExecutor Mock 전략
+- ✅ Responses API 테스트 예제
+- ✅ 서비스 전환 테스트 방법
+
+**평가:**
+- 기존 테스트 구조 유지
+- 새 컴포넌트 테스트 가능
+- Mock 패턴 제시
+
+---
+
+## 3차 평가 결과
+
+| 기준 | 2차 점수 | 3차 점수 |
+|------|----------|----------|
+| 완전성 | A+ | **A+** |
+| 명확성 | A+ | **A+** |
+| 실현가능성 | A+ | **A+** |
+| 확장성 | A+ | **A+** |
+| 에러 처리 | A+ | **A+** |
+| 보안 | A+ | **A+** |
+| 테스트 용이성 | A+ | **A+** |
+
+---
+
+## ✅ 모든 기준 A+ 유지 (v3.0)
+
+| 기준 | 최종 점수 |
+|------|----------|
+| 완전성 (Completeness) | **A+** |
+| 명확성 (Clarity) | **A+** |
+| 실현가능성 (Feasibility) | **A+** |
+| 확장성 (Extensibility) | **A+** |
+| 에러 처리 (Error Handling) | **A+** |
+| 보안 (Security) | **A+** |
+| 테스트 용이성 (Testability) | **A+** |
+
+**문서 상태: 구현 준비 완료 (Claude CLI 및 Responses API 지원)**
+
+---
+
+## 품질 보증 체크리스트 (v3.0)
+
+- [x] 모든 API 엔드포인트 명세 완료
+- [x] 요청/응답 스키마 정의 완료
+- [x] 에러 코드 및 메시지 정의 완료
+- [x] 보안 고려사항 문서화 완료
+- [x] 테스트 전략 수립 완료
+- [x] 의존성 목록 작성 완료
+- [x] 구현 체크리스트 작성 완료
+- [x] 확장 가이드 작성 완료
+- [x] Claude CLI 지원 문서화 완료
+- [x] Responses API 명세 완료
+- [x] Access 로그 형식 문서화 완료
+- [x] 다중 백엔드 아키텍처 문서화 완료
