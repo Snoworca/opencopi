@@ -1,21 +1,23 @@
 # Copilot OpenAI Proxy
 
-GitHub Copilot CLI를 OpenAI API 호환 서버로 래핑하여, OpenAI API를 지원하는 모든 클라이언트에서 Copilot을 사용할 수 있게 합니다.
+GitHub Copilot CLI 또는 Claude CLI를 OpenAI API 호환 서버로 래핑하여, OpenAI API를 지원하는 모든 클라이언트에서 사용할 수 있게 합니다.
 
 ## 테스트 환경
 
 | 항목 | 버전 |
 |------|------|
 | **Copilot CLI** | 0.0.372 (Commit: 5534560) |
+| **Claude CLI** | 1.0.3 (Build: 53143a4) |
 | **Node.js** | v20.19.6 (테스트됨) |
 | **Node.js 최소 버전** | v18.0.0 이상 |
 
 ## 주요 기능
 
 - OpenAI Chat Completions API 완전 호환 (`/v1/chat/completions`)
+- **듀얼 백엔드 지원**: GitHub Copilot CLI 또는 Claude CLI 선택
 - 스트리밍 및 비스트리밍 응답 지원
 - 동적 모델 탐색 (`/v1/models`)
-- 시스템 프롬프트 지원 (AGENTS.md 활용)
+- 시스템 프롬프트 지원
 - API 키 인증 (선택)
 - Rate Limiting
 - 상세 요청/응답 로깅
@@ -25,8 +27,10 @@ GitHub Copilot CLI를 OpenAI API 호환 서버로 래핑하여, OpenAI API를 �
 ## 요구사항
 
 - **Node.js** >= 18.0.0
-- **GitHub Copilot CLI** (`copilot` 명령어 사용 가능)
-- **GitHub Copilot 구독** (Individual $10/월, Business, 또는 Enterprise)
+- **GitHub Copilot CLI** (`copilot` 명령어) - Copilot 모드 사용 시
+- **Claude CLI** (`claude` 명령어) - Claude 모드 사용 시
+- **GitHub Copilot 구독** (Individual $10/월, Business, 또는 Enterprise) - Copilot 모드
+- **Anthropic API 키 또는 Claude Pro/Max 구독** - Claude 모드
 
 ## 설치
 
@@ -45,9 +49,17 @@ npm install
 PORT=3456                      # 서버 포트
 HOST=0.0.0.0                   # 바인딩 주소
 
-# Copilot 설정
+# 백엔드 서비스 선택
+SERVICE=copilot                # 'copilot' 또는 'claude'
+
+# Copilot 설정 (SERVICE=copilot)
 DEFAULT_MODEL=gpt-4.1          # 기본 모델
 COPILOT_CLI_PATH=copilot       # Copilot CLI 경로
+
+# Claude 설정 (SERVICE=claude)
+CLAUDE_CLI_PATH=claude         # Claude CLI 경로
+
+# 공통 설정
 REQUEST_TIMEOUT=300000         # 요청 타임아웃 (ms)
 TEMP_DIR_BASE=/tmp             # 임시 디렉토리 기본 경로
 
@@ -66,6 +78,39 @@ LOG_REQUESTS=true              # 요청 로그 활성화
 LOG_REQUEST_BODY=false         # 요청 본문 로깅
 LOG_RESPONSE_BODY=false        # 응답 본문 로깅
 ```
+
+## 백엔드 모드
+
+### Copilot 모드 (기본)
+
+```bash
+SERVICE=copilot ./start.sh
+```
+
+- 동적 모델 탐색 (13+ 모델 지원)
+- OpenAI, Anthropic, Google 등 다양한 모델
+- 시스템 프롬프트: AGENTS.md 파일 생성 방식
+
+### Claude 모드
+
+```bash
+SERVICE=claude ./start.sh
+```
+
+- 단일 모델만 지원: `claude-haiku-4-5-20251001`
+- 시스템 프롬프트: 임시 파일 방식 (`--system-prompt-file`)
+- Claude CLI가 `--dangerously-skip-permissions` 옵션으로 실행됨
+
+### Claude 모드 제한사항
+
+| 항목 | Copilot 모드 | Claude 모드 |
+|------|-------------|-------------|
+| 모델 선택 | 동적 (13+ 모델) | 고정 (1개) |
+| 모델 변경 | 요청별 가능 | 불가능 |
+| 시스템 프롬프트 | AGENTS.md | 임시 파일 |
+| CLI 옵션 | - | `--dangerously-skip-permissions` |
+
+> **참고**: Claude 모드에서는 요청의 `model` 파라미터가 무시되고 항상 `claude-haiku-4-5-20251001` 모델이 사용됩니다.
 
 ## 실행
 
@@ -362,6 +407,8 @@ curl http://localhost:3456/health
 | 429 | `rate_limit_error` | `rate_limit_exceeded` | Rate limit 초과 |
 | 503 | `service_unavailable` | `copilot_execution_error` | Copilot CLI 실행 실패 |
 | 503 | `service_unavailable` | `copilot_spawn_error` | Copilot CLI 프로세스 생성 실패 |
+| 503 | `service_unavailable` | `claude_execution_error` | Claude CLI 실행 실패 |
+| 503 | `service_unavailable` | `claude_spawn_error` | Claude CLI 프로세스 생성 실패 |
 | 504 | `timeout_error` | `timeout` | 요청 시간 초과 |
 
 ---
@@ -589,6 +636,7 @@ copilot-server/
 │   │   └── health.js             # GET /health
 │   ├── services/
 │   │   ├── copilotExecutor.js    # Copilot CLI 실행
+│   │   ├── claudeExecutor.js     # Claude CLI 실행
 │   │   ├── modelDiscovery.js     # 모델 동적 탐색
 │   │   ├── messageTransformer.js # 메시지 변환
 │   │   ├── responseFormatter.js  # OpenAI 응답 포맷팅
@@ -614,8 +662,30 @@ copilot-server/
 ├── stop.sh                       # 데몬 종료 스크립트
 ├── package.json
 ├── .env.example
+├── .eslintrc.js                  # ESLint 설정
 └── README.md
 ```
+
+---
+
+## 트러블슈팅
+
+### Copilot 인증 오류
+
+Copilot CLI 사용 시 인증 문제가 계속 발생하면 GitHub CLI를 설치하세요:
+
+```bash
+# Ubuntu/Debian
+sudo apt install gh
+
+# macOS
+brew install gh
+
+# 로그인
+gh auth login
+```
+
+GitHub CLI 로그인 후 Copilot CLI 인증이 자동으로 해결됩니다.
 
 ---
 
