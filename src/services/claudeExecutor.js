@@ -83,7 +83,7 @@ class ClaudeExecutor {
 
         const proc = spawn(this.cliPath, args, {
           cwd: dir,
-          stdio: ['pipe', 'pipe', 'pipe']
+          stdio: ['ignore', 'pipe', 'pipe']  // stdin을 ignore로 설정
         });
 
         const timeoutId = setTimeout(() => {
@@ -239,13 +239,14 @@ class ClaudeExecutor {
    */
   buildArgs(prompt, systemPromptFile, model) {
     const args = [
-      '-p', prompt,
+      '--print',  // 스크립트 모드로 실행 (워크스페이스 신뢰 다이얼로그 건너뛰기)
       '--dangerously-skip-permissions',
-      '--model', model
+      '--model', model,
+      prompt
     ];
 
     if (systemPromptFile) {
-      args.push('--system-prompt-file', systemPromptFile);
+      args.unshift('--system-prompt-file', systemPromptFile);
     }
 
     return args;
@@ -267,7 +268,7 @@ class ClaudeExecutor {
 
       const proc = spawn(this.cliPath, args, {
         cwd,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe']  // stdin을 ignore로 설정
       });
 
       let stdout = '';
