@@ -17,8 +17,6 @@ const config = {
   },
 
   claude: {
-    // Claude는 단일 모델만 지원
-    defaultModel: 'claude-haiku-4-5-20251001',
     cliPath: process.env.CLAUDE_CLI_PATH || 'claude',
     timeout: parseInt(process.env.REQUEST_TIMEOUT, 10) || 300000,
     tempDirBase: process.env.TEMP_DIR_BASE || '/tmp'
@@ -43,7 +41,8 @@ const config = {
   }
 
   // 모델 목록은 modelDiscovery 서비스에서 동적으로 탐색됨
-  // Claude 모드에서는 단일 모델(claude-haiku-4-5-20251001)만 반환
+  // Copilot 모드: CLI 동적 탐색
+  // Claude 모드: models.json 파일 로드 → CLI 탐색 → 폴백
   // src/services/modelDiscovery.js 참조
 };
 

@@ -13,14 +13,12 @@ class ClaudeExecutor {
   constructor() {
     this.cliPath = config.claude.cliPath;
     this.timeout = config.claude.timeout;
-    // Claude는 단일 모델만 지원
-    this.model = config.claude.defaultModel;
   }
 
   /**
    * 비스트리밍 실행
    * @param {Array} messages - OpenAI 형식 메시지 배열
-   * @param {string} model - 모델 ID (무시됨, 항상 고정 모델 사용)
+   * @param {string} model - 모델 ID
    * @param {Object} req - Express request 객체 (로깅용)
    * @returns {Promise<Object>} OpenAI 형식 응답
    */
@@ -38,10 +36,10 @@ class ClaudeExecutor {
       const systemPromptFile = await tempDirManager.writeSystemPromptFile(dir, systemPrompt);
 
       // Claude CLI 실행
-      const output = await this.runClaude(prompt, dir, systemPromptFile);
+      const output = await this.runClaude(prompt, dir, systemPromptFile, model);
 
       // 응답 포맷팅
-      return responseFormatter.formatCompletion(output, this.model);
+      return responseFormatter.formatCompletion(output, model);
     } finally {
       // 임시 디렉토리 정리 (시스템 프롬프트 파일 포함)
       await tempDirManager.cleanup(dir);
@@ -51,7 +49,7 @@ class ClaudeExecutor {
   /**
    * 스트리밍 실행
    * @param {Array} messages - OpenAI 형식 메시지 배열
-   * @param {string} model - 모델 ID (무시됨)
+   * @param {string} model - 모델 ID
    * @param {Object} res - Express response 객체
    * @param {Object} req - Express request 객체 (로깅용)
    */
@@ -78,7 +76,7 @@ class ClaudeExecutor {
       res.flushHeaders();
 
       await new Promise((resolve, reject) => {
-        const args = this.buildArgs(prompt, systemPromptFile);
+        const args = this.buildArgs(prompt, systemPromptFile, model);
 
         logger.debug(`Spawning claude with args: ${args.join(' ')}`);
 
@@ -97,7 +95,7 @@ class ClaudeExecutor {
           if (content.length > 0) {
             const chunk = responseFormatter.formatStreamChunk(
               content,
-              this.model,
+              model,
               streamId,
               isFirstChunk,
               false
@@ -116,7 +114,7 @@ class ClaudeExecutor {
 
           if (code === 0) {
             // 종료 청크 전송
-            res.write(responseFormatter.formatStreamChunk('', this.model, streamId, false, true));
+            res.write(responseFormatter.formatStreamChunk('', model, streamId, false, true));
             res.write(responseFormatter.formatStreamEnd());
             res.end();
             resolve();
@@ -163,7 +161,7 @@ class ClaudeExecutor {
   /**
    * 스트리밍 실행 (콜백 방식)
    * @param {Array} messages - OpenAI 형식 메시지 배열
-   * @param {string} model - 모델 ID (무시됨)
+   * @param {string} model - 모델 ID
    * @param {Object} req - Express request 객체 (로깅용)
    * @param {Function} onChunk - 청크 콜백 함수
    */
@@ -179,7 +177,7 @@ class ClaudeExecutor {
       const systemPromptFile = await tempDirManager.writeSystemPromptFile(dir, systemPrompt);
 
       await new Promise((resolve, reject) => {
-        const args = this.buildArgs(prompt, systemPromptFile);
+        const args = this.buildArgs(prompt, systemPromptFile, model);
 
         const proc = spawn(this.cliPath, args, {
           cwd: dir,
@@ -230,13 +228,14 @@ class ClaudeExecutor {
    * Claude CLI 명령 인자 생성
    * @param {string} prompt - 프롬프트
    * @param {string|null} systemPromptFile - 시스템 프롬프트 파일 경로
+   * @param {string} model - 모델 ID
    * @returns {string[]} 명령 인자 배열
    */
-  buildArgs(prompt, systemPromptFile) {
+  buildArgs(prompt, systemPromptFile, model) {
     const args = [
       '-p', prompt,
       '--dangerously-skip-permissions',
-      '--model', this.model
+      '--model', model
     ];
 
     if (systemPromptFile) {
@@ -251,11 +250,12 @@ class ClaudeExecutor {
    * @param {string} prompt - 프롬프트
    * @param {string} cwd - 작업 디렉토리
    * @param {string|null} systemPromptFile - 시스템 프롬프트 파일 경로
+   * @param {string} model - 모델 ID
    * @returns {Promise<string>} CLI 출력
    */
-  runClaude(prompt, cwd, systemPromptFile) {
+  runClaude(prompt, cwd, systemPromptFile, model) {
     return new Promise((resolve, reject) => {
-      const args = this.buildArgs(prompt, systemPromptFile);
+      const args = this.buildArgs(prompt, systemPromptFile, model);
 
       logger.debug(`Spawning claude with args: ${args.join(' ')}`);
 

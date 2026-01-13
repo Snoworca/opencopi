@@ -44,7 +44,11 @@ async function validateChatCompletion(req, res, next) {
 
     // 모델이 없으면 기본 모델 사용
     if (!value.model) {
-      value.model = config.copilot.defaultModel;
+      if (config.service === 'claude') {
+        value.model = 'default';
+      } else {
+        value.model = config.copilot.defaultModel;
+      }
     } else {
       // 모델명 소문자로 정규화 (n8n 등 대문자로 보내는 클라이언트 호환)
       value.model = value.model.toLowerCase();

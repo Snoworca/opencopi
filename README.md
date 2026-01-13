@@ -53,11 +53,13 @@ HOST=0.0.0.0                   # 바인딩 주소
 SERVICE=copilot                # 'copilot' 또는 'claude'
 
 # Copilot 설정 (SERVICE=copilot)
-DEFAULT_MODEL=gpt-4.1          # 기본 모델
+DEFAULT_MODEL=gpt-4.1          # 기본 모델 (모델명 생략 시 사용)
 COPILOT_CLI_PATH=copilot       # Copilot CLI 경로
 
 # Claude 설정 (SERVICE=claude)
 CLAUDE_CLI_PATH=claude         # Claude CLI 경로
+# 참고: Claude 모드에서 모델명 생략 시 'default' 사용
+# 사용 가능한 모델 목록은 models.json 파일에서 관리
 
 # 공통 설정
 REQUEST_TIMEOUT=300000         # 요청 타임아웃 (ms)
@@ -79,6 +81,34 @@ LOG_REQUEST_BODY=false         # 요청 본문 로깅
 LOG_RESPONSE_BODY=false        # 응답 본문 로깅
 ```
 
+### Claude 모델 설정 (models.json)
+
+Claude 모드에서 사용할 모델 목록을 `models.json` 파일로 관리할 수 있습니다:
+
+```json
+{
+  "claude": [
+    "default",
+    "sonnet",
+    "opus",
+    "haiku",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+    "claude-opus-4-5"
+  ]
+}
+```
+
+**초기 설정**:
+```bash
+cp models.example.json models.json
+```
+
+**커스터마이징**:
+- 사용할 모델을 추가하거나 제거
+- Claude CLI에서 지원하는 모델 별칭이나 전체 이름 사용 가능
+- 파일이 없거나 읽기 실패 시 CLI 동적 탐색으로 폴백
+
 ## 백엔드 모드
 
 ### Copilot 모드 (기본)
@@ -97,20 +127,25 @@ SERVICE=copilot ./start.sh
 SERVICE=claude ./start.sh
 ```
 
-- 단일 모델만 지원: `claude-haiku-4-5-20251001`
+- **모델 목록**: `models.json` 파일에서 관리 (20개 모델)
+- **기본 모델**: `default` (모델명 생략 시 사용)
+- **모델 탐색 순서**: 
+  1. `models.json` 파일 읽기
+  2. 실패 시 Claude CLI 동적 탐색
+  3. 실패 시 폴백 모델 목록 사용
 - 시스템 프롬프트: 임시 파일 방식 (`--system-prompt-file`)
 - Claude CLI가 `--dangerously-skip-permissions` 옵션으로 실행됨
 
-### Claude 모드 제한사항
+### 백엔드 비교
 
 | 항목 | Copilot 모드 | Claude 모드 |
 |------|-------------|-------------|
-| 모델 선택 | 동적 (13+ 모델) | 고정 (1개) |
-| 모델 변경 | 요청별 가능 | 불가능 |
+| 모델 목록 소스 | CLI 동적 탐색 | models.json → CLI → 폴백 |
+| 모델 수 | 13+ 모델 | 20개 (기본) |
+| 기본 모델 | gpt-4.1 | default |
+| 모델 변경 | 요청별 가능 | 요청별 가능 |
 | 시스템 프롬프트 | AGENTS.md | 임시 파일 |
 | CLI 옵션 | - | `--dangerously-skip-permissions` |
-
-> **참고**: Claude 모드에서는 요청의 `model` 파라미터가 무시되고 항상 `claude-haiku-4-5-20251001` 모델이 사용됩니다.
 
 ## 실행
 
@@ -169,7 +204,10 @@ pm2 restart copilot-server
 
 ### GET /v1/models
 
-사용 가능한 모델 목록을 반환합니다. Copilot CLI에서 동적으로 탐색됩니다.
+사용 가능한 모델 목록을 반환합니다.
+
+**Copilot 모드**: Copilot CLI에서 동적으로 탐색  
+**Claude 모드**: `models.json` 파일에서 로드 (폴백: CLI 탐색)
 
 #### 요청
 
@@ -177,7 +215,7 @@ pm2 restart copilot-server
 curl http://localhost:3456/v1/models
 ```
 
-#### 응답
+#### 응답 예시 (Copilot 모드)
 
 ```json
 {
@@ -205,14 +243,51 @@ curl http://localhost:3456/v1/models
 }
 ```
 
+#### 응답 예시 (Claude 모드)
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "default",
+      "object": "model",
+      "created": 1735470000,
+      "owned_by": "anthropic"
+    },
+    {
+      "id": "sonnet",
+      "object": "model",
+      "created": 1735470000,
+      "owned_by": "anthropic"
+    },
+    {
+      "id": "claude-sonnet-4-5",
+      "object": "model",
+      "created": 1735470000,
+      "owned_by": "anthropic"
+    }
+  ]
+}
+```
+
 #### 권장 모델
 
+**Copilot 모드**:
 | 모델 ID | 설명 |
 |---------|------|
 | `gpt-4.1` | **권장** - 범용적 사용 가능, 빠른 응답 속도 |
 | `gpt-5-mini` | 범용적 사용 가능하나 응답 속도가 느림 |
 
-> 모델 목록은 Copilot CLI에서 동적으로 탐색되므로, 사용 가능한 전체 모델은 `/v1/models` API로 확인하세요.
+**Claude 모드**:
+| 모델 ID | 설명 |
+|---------|------|
+| `default` | **기본** - 모델명 생략 시 자동 사용 |
+| `sonnet` | Claude Sonnet 최신 버전 |
+| `opus` | Claude Opus 최신 버전 |
+| `claude-sonnet-4-5` | 특정 버전 지정 |
+
+> **참고**: Claude 모드의 모델 목록은 `models.json` 파일을 편집하여 커스터마이즈할 수 있습니다.
 
 ---
 
@@ -657,6 +732,8 @@ copilot-server/
 │   ├── integration/              # 통합 테스트
 │   └── e2e/                      # E2E 테스트
 ├── logs/                         # 로그 디렉토리
+├── models.json                   # Claude 모델 목록 (Claude 모드)
+├── models.example.json           # 모델 목록 예제 파일
 ├── ecosystem.config.js           # PM2 설정
 ├── start.sh                      # 데몬 시작 스크립트
 ├── stop.sh                       # 데몬 종료 스크립트

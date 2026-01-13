@@ -1,21 +1,19 @@
 /**
  * Model Discovery Service
- * Copilot CLI에서 사용 가능한 모델 목록을 동적으로 탐색
- * Claude 모드에서는 단일 모델만 반환
+ * CLI에서 사용 가능한 모델 목록을 동적으로 탐색
  */
 
 const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 const config = require('../config');
 const { logger } = require('../utils/logger');
 
 // 캐시된 모델 목록
 let cachedModels = null;
 
-// Claude 모드용 단일 모델
-const CLAUDE_MODEL = {
-  id: 'claude-haiku-4-5-20251001',
-  owned_by: 'anthropic'
-};
+// models.json 경로
+const MODELS_JSON_PATH = path.join(__dirname, '../../models.json');
 
 // 폴백 모델 목록 (CLI 호출 실패 시)
 const FALLBACK_MODELS = [
@@ -43,6 +41,81 @@ function inferOwner(modelId) {
   if (modelId.startsWith('gemini')) return 'google';
   if (modelId.startsWith('o1') || modelId.startsWith('o3') || modelId.startsWith('o4')) return 'openai';
   return 'unknown';
+}
+
+/**
+ * models.json에서 Claude 모델 목록 로드
+ */
+function loadClaudeModelsFromJson() {
+  try {
+    const data = fs.readFileSync(MODELS_JSON_PATH, 'utf8');
+    const modelsJson = JSON.parse(data);
+    
+    if (modelsJson.claude && Array.isArray(modelsJson.claude)) {
+      const models = modelsJson.claude.map(id => ({
+        id,
+        owned_by: 'anthropic'
+      }));
+      logger.info(`Loaded ${models.length} Claude models from models.json`);
+      return models;
+    }
+    
+    logger.warn('models.json does not contain claude array');
+    return null;
+  } catch (error) {
+    logger.warn(`Failed to load models.json: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Claude CLI를 호출하여 모델 목록 파싱
+ */
+function discoverClaudeModels() {
+  return new Promise((resolve, reject) => {
+    const claudePath = config.claude.cliPath;
+    const proc = spawn(claudePath, ['--model', 'invalid-model-for-discovery'], {
+      timeout: 10000
+    });
+
+    let stderr = '';
+    let stdout = '';
+
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on('error', (err) => {
+      logger.error(`Failed to spawn claude CLI: ${err.message}`);
+      reject(err);
+    });
+
+    proc.on('close', (code) => {
+      // stderr 또는 stdout에서 모델 목록 파싱
+      const output = stderr + stdout;
+
+      // "Allowed choices are X, Y, Z." 패턴 파싱
+      const match = output.match(/Allowed choices are (.+)\.$/m);
+
+      if (match) {
+        const modelIds = match[1].split(',').map(m => m.trim()).filter(m => m.length > 0);
+        const models = modelIds.map(id => ({
+          id,
+          owned_by: inferOwner(id)
+        }));
+
+        logger.info(`Discovered ${models.length} models from Claude CLI`);
+        resolve(models);
+      } else {
+        logger.warn('Failed to parse model list from Claude CLI output');
+        reject(new Error('Failed to parse model list'));
+      }
+    });
+  });
 }
 
 /**
@@ -98,21 +171,26 @@ function discoverModels() {
 
 /**
  * 모델 목록 조회 (캐싱)
- * Claude 모드에서는 단일 모델만 반환
  */
 async function getModels() {
-  // Claude 모드: 단일 모델만 반환
-  if (config.service === 'claude') {
-    return [CLAUDE_MODEL];
-  }
-
-  // Copilot 모드: 동적 탐색
   if (cachedModels) {
     return cachedModels;
   }
 
   try {
-    const models = await discoverModels();
+    let models;
+    if (config.service === 'claude') {
+      // models.json에서 먼저 시도
+      models = loadClaudeModelsFromJson();
+      
+      // models.json 실패 시 CLI 동적 탐색
+      if (!models) {
+        logger.info('Falling back to Claude CLI discovery');
+        models = await discoverClaudeModels();
+      }
+    } else {
+      models = await discoverModels();
+    }
     cachedModels = models;
     return models;
   } catch (error) {
