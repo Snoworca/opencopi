@@ -77,6 +77,7 @@ class ClaudeExecutor {
 
       await new Promise((resolve, reject) => {
         const args = this.buildArgs(prompt, systemPromptFile, model);
+        let stderr = '';
 
         logger.debug(`Spawning claude with args: ${args.join(' ')}`);
 
@@ -87,7 +88,7 @@ class ClaudeExecutor {
 
         const timeoutId = setTimeout(() => {
           proc.kill('SIGTERM');
-          reject(new Error('Request timeout'));
+          reject(this.createError('Request timeout', 504, 'timeout_error', 'timeout'));
         }, this.timeout);
 
         proc.stdout.on('data', (data) => {
@@ -106,6 +107,7 @@ class ClaudeExecutor {
         });
 
         proc.stderr.on('data', (data) => {
+          stderr += data.toString();
           logger.warn(`Claude stderr: ${data.toString()}`);
         });
 
@@ -119,7 +121,9 @@ class ClaudeExecutor {
             res.end();
             resolve();
           } else {
-            reject(new Error(`Claude process exited with code ${code}`));
+            const errorMsg = stderr.trim() || `Claude CLI exited with code ${code}`;
+            logger.error(`Claude streaming failed: ${errorMsg}`);
+            reject(this.createError(errorMsg, 503, 'service_unavailable', 'claude_execution_error'));
           }
         });
 
@@ -139,18 +143,20 @@ class ClaudeExecutor {
     } catch (err) {
       // 스트리밍 중 에러 발생 시
       if (!res.headersSent) {
+        // 헤더 전송 전이면 일반 에러 응답
         throw err;
       } else {
-        // 이미 스트리밍 시작된 경우 에러 청크 전송
+        // 이미 스트리밍 시작된 경우 에러 청크 전송 후 즉시 종료
         const errorChunk = {
           error: {
             message: err.message,
-            type: 'server_error',
-            code: 'stream_error'
+            type: err.type || 'server_error',
+            code: err.code || 'stream_error'
           }
         };
         res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
         res.end();
+        logger.error(`Stream terminated due to error: ${err.message}`);
       }
     } finally {
       // 임시 디렉토리 정리

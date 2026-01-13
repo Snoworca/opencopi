@@ -82,6 +82,7 @@ class CopilotExecutor {
           '--allow-all-tools',
           '--stream', 'on'
         ];
+        let stderr = '';
 
         logger.debug(`Spawning copilot with args: ${args.join(' ')}`);
 
@@ -92,7 +93,7 @@ class CopilotExecutor {
 
         const timeoutId = setTimeout(() => {
           proc.kill('SIGTERM');
-          reject(new Error('Request timeout'));
+          reject(this.createError('Request timeout', 504, 'timeout_error', 'timeout'));
         }, this.timeout);
 
         proc.stdout.on('data', (data) => {
@@ -112,6 +113,7 @@ class CopilotExecutor {
         });
 
         proc.stderr.on('data', (data) => {
+          stderr += data.toString();
           logger.warn(`Copilot stderr: ${data.toString()}`);
         });
 
@@ -125,7 +127,9 @@ class CopilotExecutor {
             res.end();
             resolve();
           } else {
-            reject(new Error(`Copilot process exited with code ${code}`));
+            const errorMsg = stderr.trim() || `Copilot CLI exited with code ${code}`;
+            logger.error(`Copilot streaming failed: ${errorMsg}`);
+            reject(this.createError(errorMsg, 503, 'service_unavailable', 'copilot_execution_error'));
           }
         });
 
@@ -145,18 +149,20 @@ class CopilotExecutor {
     } catch (err) {
       // 스트리밍 중 에러 발생 시
       if (!res.headersSent) {
+        // 헤더 전송 전이면 일반 에러 응답
         throw err;
       } else {
-        // 이미 스트리밍 시작된 경우 에러 청크 전송
+        // 이미 스트리밍 시작된 경우 에러 청크 전송 후 즉시 종료
         const errorChunk = {
           error: {
             message: err.message,
-            type: 'server_error',
-            code: 'stream_error'
+            type: err.type || 'server_error',
+            code: err.code || 'stream_error'
           }
         };
         res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
         res.end();
+        logger.error(`Stream terminated due to error: ${err.message}`);
       }
     } finally {
       // 임시 디렉토리 정리
